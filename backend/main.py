@@ -108,7 +108,7 @@ from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
-FROM_EMAIL = "cardiac.prediction.app@gmail.com" # Default sender identity
+FROM_EMAIL = "cardiacattackpredictor@gmail.com" # Updated to match verified sender
 
 def send_email(to_email, risk_prob):
     if not to_email:
@@ -187,7 +187,14 @@ def debug_email(to_email: str):
             "api_response_code": response.status_code
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        error_msg = str(e)
+        # SendGrid python library stores response body in .body (as bytes)
+        if hasattr(e, 'body'):
+            try:
+                error_msg += f" | Details: {e.body.decode('utf-8')}"
+            except:
+                error_msg += f" | Details: {e.body}"
+        return {"status": "error", "message": error_msg}
 
 def save_history(uid, data, prob, label, m_type):
     try:
