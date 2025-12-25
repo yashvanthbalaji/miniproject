@@ -164,6 +164,34 @@ def send_email(to_email, risk_prob):
     except Exception as e:
         print(f"Email Failed: {e}")
 
+@app.get("/debug-email")
+def debug_email(to_email: str):
+    """
+    Temporary endpoint to test email sending and see errors directly.
+    Usage: https://your-url.onrender.com/debug-email?to_email=you@example.com
+    """
+    try:
+        # Check if creds are loaded
+        if not GMAIL_USER or "your_email" in GMAIL_USER:
+            return {"status": "error", "message": "GMAIL_USER not configured properly in Env Vars"}
+            
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.set_debuglevel(1) # Enable verbose debug output
+        server.starttls()
+        server.login(GMAIL_USER, GMAIL_PASSWORD)
+        
+        msg = MIMEText("This is a test email from your Cardiac Prediction App.")
+        msg['Subject'] = "Test Email - Configuration Success"
+        msg['From'] = GMAIL_USER
+        msg['To'] = to_email
+        
+        server.sendmail(GMAIL_USER, to_email, msg.as_string())
+        server.quit()
+        
+        return {"status": "success", "message": f"Email sent successfully to {to_email} from {GMAIL_USER}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "type": type(e).__name__}
+
 def save_history(uid, data, prob, label, m_type):
     try:
         db = get_db()
