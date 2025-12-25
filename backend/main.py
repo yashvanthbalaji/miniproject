@@ -154,8 +154,9 @@ def send_email(to_email, risk_prob):
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain'))
 
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
+        # Use SMTP_SSL (Port 465) instead of STARTTLS (587)
+        # This is often more reliable on cloud hosting (Render)
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
         server.login(GMAIL_USER, GMAIL_PASSWORD)
         text = msg.as_string()
         server.sendmail(GMAIL_USER, to_email, text)
@@ -175,12 +176,11 @@ def debug_email(to_email: str):
         if not GMAIL_USER or "your_email" in GMAIL_USER:
             return {"status": "error", "message": "GMAIL_USER not configured properly in Env Vars"}
             
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.set_debuglevel(1) # Enable verbose debug output
-        server.starttls()
+        # Try SMTP_SSL on 465
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
         server.login(GMAIL_USER, GMAIL_PASSWORD)
         
-        msg = MIMEText("This is a test email from your Cardiac Prediction App.")
+        msg = MIMEText("This is a test email from your Cardiac Prediction App (Using Port 465 SSL).")
         msg['Subject'] = "Test Email - Configuration Success"
         msg['From'] = GMAIL_USER
         msg['To'] = to_email
