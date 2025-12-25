@@ -102,24 +102,30 @@ class SyntheticInput(BaseModel):
     age: int
     bmi: float
 
-# Email Config
-GMAIL_USER = os.getenv("GMAIL_USER", "cardiacattackpredictor@gmail.com")
-GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD", "dbmw subf oqjg rggn")
+# SendGrid Config
+import os
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+FROM_EMAIL = "cardiac.prediction.app@gmail.com" # Default sender identity
 
 def send_email(to_email, risk_prob):
     if not to_email:
         print("No email provided for notification.")
         return
 
+    # If API key is missing, log warning (prevents crash)
+    if not SENDGRID_API_KEY:
+        print("WARNING: SENDGRID_API_KEY not set. Email not sent.")
+        return
+
     risk_percentage = risk_prob * 100
     
+    # Determine Content
     if risk_percentage < 40:
         subject = "Cardiac Health Status – Low Risk"
-        body = (
+        content_text = (
             f"Result: Low Risk ({risk_percentage:.1f}%)\n\n"
             "We are pleased to inform you that no immediate cardiac concern is detected based on your provided data. "
             "We encourage you to maintain a healthy diet and lifestyle to keep your heart strong.\n\n"
@@ -127,7 +133,7 @@ def send_email(to_email, risk_prob):
         )
     elif 40 <= risk_percentage <= 70:
         subject = "Cardiac Health Status – Moderate Risk"
-        body = (
+        content_text = (
             f"Result: Moderate Risk ({risk_percentage:.1f}%)\n\n"
             "Your analysis indicates a moderate risk. We advise you to monitor your health parameters closely, "
             "improve lifestyle habits (diet, exercise, stress management), and consider a medical consultation if any symptoms occur.\n\n"
@@ -135,7 +141,7 @@ def send_email(to_email, risk_prob):
         )
     else: # risk > 70
         subject = "Cardiac Risk Alert – High Risk Detected"
-        body = (
+        content_text = (
             f"Result: High Risk ({risk_percentage:.1f}%)\n\n"
             "ALERT: Your analysis indicates an elevated cardiac risk. We strongly recommend an immediate medical consultation "
             "for a professional assessment.\n\n"
@@ -143,125 +149,45 @@ def send_email(to_email, risk_prob):
         )
 
     try:
-        # If credentials are mocks, just log it
-        if GMAIL_USER == "your_email@gmail.com" or GMAIL_PASSWORD == "your_app_password":
-            print(f"[MOCK EMAIL] To: {to_email}\nSubject: {subject}\nBody: {body}\n")
-            return
-
-        msg = MIMEMultipart()
-        msg['From'] = GMAIL_USER
-        msg['To'] = to_email
-        msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
-
-        # Use SMTP_SSL (Port 465) instead of STARTTLS (587)
-        # This is often more reliable on cloud hosting (Render)
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-        server.login(GMAIL_USER, GMAIL_PASSWORD)
-        text = msg.as_string()
-        server.sendmail(GMAIL_USER, to_email, text)
-        server.quit()
-        print(f"Email sent to {to_email}")
+        message = Mail(
+            from_email=FROM_EMAIL,
+            to_emails=to_email,
+            subject=subject,
+            plain_text_content=content_text
+        )
+        
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+        print(f"Email sent to {to_email} | Status: {response.status_code}")
+        
     except Exception as e:
-        print(f"Email Failed: {e}")
+        print(f"SendGrid Failed: {e}")
 
 @app.get("/debug-email")
 def debug_email(to_email: str):
     """
-    Temporary endpoint to test email sending and see errors directly.
-    Usage: https://your-url.onrender.com/debug-email?to_email=you@example.com
+    Test SendGrid Integration
     """
+    if not SENDGRID_API_KEY:
+        return {"status": "error", "message": "SENDGRID_API_KEY Env Var is missing"}
+
     try:
-        # Check if creds are loaded
-        if not GMAIL_USER or "your_email" in GMAIL_USER:
-            return {"status": "error", "message": "GMAIL_USER not configured properly in Env Vars"}
-            
-@app.get("/debug-email")
-def debug_email(to_email: str):
-    """
-    Comprehensive Connectivity Test
-    """
-    import socket
-    import sys
-    
-    logs = []
-    
-    def log(msg):
-        logs.append(str(msg))
-        print(msg)
-
-    log("--- Starting Diagnostic ---")
-    
-    # 1. Environment Check
-    log(f"GMAIL_USER Set: {'Yes' if GMAIL_USER and 'your_email' not in GMAIL_USER else 'NO'}")
-    
-    # 2. Basic Internet Check
-    try:
-        log("Testing outbound connection to google.com...")
-        socket.create_connection(("www.google.com", 80), timeout=5)
-        log("SUCCESS: Can reach google.com")
+        message = Mail(
+            from_email=FROM_EMAIL,
+            to_emails=to_email,
+            subject="Test Email - SendGrid Connection",
+            plain_text_content="This is a test email via SendGrid Web API. If you see this, the integration is working!"
+        )
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+        
+        return {
+            "status": "success", 
+            "message": f"Sent to {to_email}", 
+            "api_response_code": response.status_code
+        }
     except Exception as e:
-        log(f"FAILURE: Cannot reach internet: {e}")
-        return {"status": "error", "logs": logs, "message": "Container has no internet access"}
-
-    # 3. DNS Resolution
-    gmail_ip = None
-    try:
-        log("Resolving smtp.gmail.com...")
-        gmail_ip = socket.gethostbyname("smtp.gmail.com")
-        log(f"SUCCESS: smtp.gmail.com resolved to {gmail_ip}")
-    except Exception as e:
-        log(f"FAILURE: DNS resolution failed: {e}")
-
-    # 4. SMTP Connection Tests
-    success = False
-    
-    # Test Port 587 (Standard)
-    try:
-        log(f"Attempting SMTP (587) to {gmail_ip or 'smtp.gmail.com'}...")
-        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
-        log("Connected to 587. Starting TLS...")
-        server.starttls()
-        log("TLS Started. Logging in...")
-        server.login(GMAIL_USER, GMAIL_PASSWORD)
-        log("Logged in. Sending...")
-        msg = MIMEText("Test from Port 587")
-        msg['Subject'] = "Debug 587"
-        msg['From'] = GMAIL_USER
-        msg['To'] = to_email
-        server.sendmail(GMAIL_USER, to_email, msg.as_string())
-        server.quit()
-        log("SUCCESS: Sent via Port 587")
-        success = True
-    except Exception as e:
-        log(f"FAILED 587: {e}")
-
-    # Test Port 465 (SSL) if 587 failed
-    if not success:
-        try:
-            log(f"Attempting SMTP_SSL (465) to {gmail_ip or 'smtp.gmail.com'}...")
-            server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10)
-            log("Connected to 465. Logging in...")
-            server.login(GMAIL_USER, GMAIL_PASSWORD)
-            log("Logged in. Sending...")
-            msg = MIMEText("Test from Port 465")
-            msg['Subject'] = "Debug 465"
-            msg['From'] = GMAIL_USER
-            msg['To'] = to_email
-            server.sendmail(GMAIL_USER, to_email, msg.as_string())
-            server.quit()
-            log("SUCCESS: Sent via Port 465")
-            success = True
-        except Exception as e:
-            log(f"FAILED 465: {e}")
-
-    return {
-        "status": "success" if success else "error",
-        "message": "Check logs for details" if not success else f"Email sent to {to_email}",
-        "logs": logs
-    }
-    except Exception as e:
-        return {"status": "error", "message": str(e), "type": type(e).__name__}
+        return {"status": "error", "message": str(e)}
 
 def save_history(uid, data, prob, label, m_type):
     try:
