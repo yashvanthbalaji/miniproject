@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel
 import pandas as pd
 import joblib
@@ -196,7 +196,7 @@ def get_risk_message(prob):
 
 @app.post("/predict") # Keep legacy endpoint mapping to Acute
 @app.post("/predict/acute")
-def predict_acute(data: AcuteInput, token: dict = Depends(verify_firebase_token)):
+def predict_acute(data: AcuteInput, background_tasks: BackgroundTasks, token: dict = Depends(verify_firebase_token)):
     if not models["uci"]: raise HTTPException(503, "Model UCI not loaded")
     
     uid = token['uid']
@@ -210,15 +210,15 @@ def predict_acute(data: AcuteInput, token: dict = Depends(verify_firebase_token)
     except Exception as e: raise HTTPException(400, f"Error: {e}")
 
     label = get_risk_message(risk_prob)
-    save_history(uid, input_dict, risk_prob, label, "acute")
     
-    # Send Email (replaces SMS)
-    send_email(email, risk_prob)
+    # Save history and Send Email in Background (Speed Boost)
+    background_tasks.add_task(save_history, uid, input_dict, risk_prob, label, "acute")
+    background_tasks.add_task(send_email, email, risk_prob)
     
     return {"risk_probability": risk_prob, "risk_label": label, "alert_sent": True}
 
 @app.post("/predict/lifestyle")
-def predict_lifestyle(data: LifestyleInput, token: dict = Depends(verify_firebase_token)):
+def predict_lifestyle(data: LifestyleInput, background_tasks: BackgroundTasks, token: dict = Depends(verify_firebase_token)):
     if not models["lifestyle"]: raise HTTPException(503, "Model Lifestyle not loaded")
     
     uid = token['uid']
@@ -239,10 +239,10 @@ def predict_lifestyle(data: LifestyleInput, token: dict = Depends(verify_firebas
     except Exception as e: raise HTTPException(400, f"Error: {e}")
     
     label = get_risk_message(risk_prob)
-    save_history(uid, input_dict, risk_prob, label, "lifestyle")
     
-    # Send Email
-    send_email(email, risk_prob)
+    # Background Tasks
+    background_tasks.add_task(save_history, uid, input_dict, risk_prob, label, "lifestyle")
+    background_tasks.add_task(send_email, email, risk_prob)
     
     return {"risk_probability": risk_prob, "risk_label": label}
 
