@@ -176,19 +176,90 @@ def debug_email(to_email: str):
         if not GMAIL_USER or "your_email" in GMAIL_USER:
             return {"status": "error", "message": "GMAIL_USER not configured properly in Env Vars"}
             
-        # Try SMTP_SSL on 465
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+@app.get("/debug-email")
+def debug_email(to_email: str):
+    """
+    Comprehensive Connectivity Test
+    """
+    import socket
+    import sys
+    
+    logs = []
+    
+    def log(msg):
+        logs.append(str(msg))
+        print(msg)
+
+    log("--- Starting Diagnostic ---")
+    
+    # 1. Environment Check
+    log(f"GMAIL_USER Set: {'Yes' if GMAIL_USER and 'your_email' not in GMAIL_USER else 'NO'}")
+    
+    # 2. Basic Internet Check
+    try:
+        log("Testing outbound connection to google.com...")
+        socket.create_connection(("www.google.com", 80), timeout=5)
+        log("SUCCESS: Can reach google.com")
+    except Exception as e:
+        log(f"FAILURE: Cannot reach internet: {e}")
+        return {"status": "error", "logs": logs, "message": "Container has no internet access"}
+
+    # 3. DNS Resolution
+    gmail_ip = None
+    try:
+        log("Resolving smtp.gmail.com...")
+        gmail_ip = socket.gethostbyname("smtp.gmail.com")
+        log(f"SUCCESS: smtp.gmail.com resolved to {gmail_ip}")
+    except Exception as e:
+        log(f"FAILURE: DNS resolution failed: {e}")
+
+    # 4. SMTP Connection Tests
+    success = False
+    
+    # Test Port 587 (Standard)
+    try:
+        log(f"Attempting SMTP (587) to {gmail_ip or 'smtp.gmail.com'}...")
+        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
+        log("Connected to 587. Starting TLS...")
+        server.starttls()
+        log("TLS Started. Logging in...")
         server.login(GMAIL_USER, GMAIL_PASSWORD)
-        
-        msg = MIMEText("This is a test email from your Cardiac Prediction App (Using Port 465 SSL).")
-        msg['Subject'] = "Test Email - Configuration Success"
+        log("Logged in. Sending...")
+        msg = MIMEText("Test from Port 587")
+        msg['Subject'] = "Debug 587"
         msg['From'] = GMAIL_USER
         msg['To'] = to_email
-        
         server.sendmail(GMAIL_USER, to_email, msg.as_string())
         server.quit()
-        
-        return {"status": "success", "message": f"Email sent successfully to {to_email} from {GMAIL_USER}"}
+        log("SUCCESS: Sent via Port 587")
+        success = True
+    except Exception as e:
+        log(f"FAILED 587: {e}")
+
+    # Test Port 465 (SSL) if 587 failed
+    if not success:
+        try:
+            log(f"Attempting SMTP_SSL (465) to {gmail_ip or 'smtp.gmail.com'}...")
+            server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10)
+            log("Connected to 465. Logging in...")
+            server.login(GMAIL_USER, GMAIL_PASSWORD)
+            log("Logged in. Sending...")
+            msg = MIMEText("Test from Port 465")
+            msg['Subject'] = "Debug 465"
+            msg['From'] = GMAIL_USER
+            msg['To'] = to_email
+            server.sendmail(GMAIL_USER, to_email, msg.as_string())
+            server.quit()
+            log("SUCCESS: Sent via Port 465")
+            success = True
+        except Exception as e:
+            log(f"FAILED 465: {e}")
+
+    return {
+        "status": "success" if success else "error",
+        "message": "Check logs for details" if not success else f"Email sent to {to_email}",
+        "logs": logs
+    }
     except Exception as e:
         return {"status": "error", "message": str(e), "type": type(e).__name__}
 
